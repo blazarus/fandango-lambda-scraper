@@ -8,6 +8,7 @@ const {
 } = require("./util");
 const aws = require("aws-sdk");
 const s3 = new aws.S3({ apiVersion: "2006-03-01" });
+const setup = require("./starter-kit/setup");
 
 const S3_BUCKET = "hackathon.blazarus";
 
@@ -28,9 +29,9 @@ const S3_BUCKET = "hackathon.blazarus";
 //   purchaseUrl: string; // url to fandango to go purchase tickets
 // }
 
-async function scrapeFandango(browser) {
+async function scrapeFandango(browserFactory) {
   const showtimeInfo = [];
-
+  const browser = await browserFactory();
   const page = await browser.newPage();
 
   try {
@@ -47,7 +48,10 @@ async function scrapeFandango(browser) {
     const allTheaterInfo = await gatherAllTheaterInfo(page);
     console.log("allTheaterInfo", allTheaterInfo);
 
-    // get a list of urls to open and take screenshots of the seating charts, and then open those in new windows in parallel
+    // get a list of urls to open and take screenshots of the seating charts,
+    // and then open those in new windows in parallel
+    // Note: fandango doesn't like having multiple showtime pages open in different tabs,
+    // probably for session reasons. Need to open different browsers
     const BATCH_SIZE = 5;
     const batches = [];
     let currBatch = [];
@@ -60,7 +64,7 @@ async function scrapeFandango(browser) {
               currBatch = [];
               batches.push(currBatch);
             }
-            currBatch.push({ browser, showtime, index });
+            currBatch.push({ showtime, index });
             index++;
           }
         }
@@ -68,8 +72,8 @@ async function scrapeFandango(browser) {
     }
 
     for (const batch of batches) {
-      const promises = batch.map(({ browser, showtime, index }) =>
-        getShowtimeScreenshot(browser, showtime, index)
+      const promises = batch.map(({ showtime, index }) =>
+        getShowtimeScreenshot(browserFactory, showtime, index)
       );
       await Promise.all(promises);
     }
@@ -90,22 +94,26 @@ async function scrapeFandango(browser) {
   }
 
   console.log("Done, closing page");
-  await page.close();
+  await browser.close();
 }
 
-async function getShowtimeScreenshot(browser, showtime, index) {
+async function getShowtimeScreenshot(browserFactory, showtime, index) {
   console.log("Starting to process showtime:", showtime);
+  const browser = await browserFactory();
   const page = await browser.newPage();
   try {
-    await page.goto(showtime.purchaseUrl);
+    await page.goto(showtime.purchaseUrl, {
+      waitUntil: ["domcontentloaded", "networkidle0"]
+    });
     await page.waitForSelector("select", {
       timeout: 5000
     });
     await page.select("select.qtyDropDown", "1");
     await clickAndNavigate(page, "button");
-    await page.waitForSelector("#seats_cover", { timeout: 5000 });
-    // give the page some time to draw
-    await sleep(5000);
+    await Promise.all([
+      page.waitForSelector("#seats_cover", { timeout: 5000 }),
+      page.waitForSelector("#SeatPickerContainer", { timeout: 5000 })
+    ]);
 
     const seatPickerHandle = await page.$("#SeatPickerContainer");
 
@@ -127,6 +135,7 @@ async function getShowtimeScreenshot(browser, showtime, index) {
       .promise();
 
     await page.close();
+    await browser.close();
 
     // record path in the showtime object so we can retrieve later
     // record only after screenshot is actually successful

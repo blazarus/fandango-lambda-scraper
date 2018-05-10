@@ -3,10 +3,10 @@ const { scrapeFandango } = require("./scraper");
 
 exports.handler = async (event, context) => {
   console.log("hello from lambda");
-  const browser = await setup.getBrowser();
-  await exports.run(browser);
+  const browserFactory = await setup.createBrowser;
+  await exports.run(browserFactory);
 };
 
-exports.run = async browser => {
-  await scrapeFandango(browser);
+exports.run = async browserFactory => {
+  await scrapeFandango(browserFactory);
 };

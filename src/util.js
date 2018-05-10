@@ -14,11 +14,21 @@ async function isReservedSeating(showtimeGroupHandle) {
 }
 
 function clickAndNavigate(page, ...clickArgs) {
-  return Promise.all([page.waitForNavigation(), page.click(...clickArgs)]);
+  return Promise.all([
+    page.waitForNavigation({
+      waitUntil: ["domcontentloaded", "networkidle2"]
+    }),
+    page.click(...clickArgs)
+  ]);
 }
 
 function clickElemAndNavigate(page, elem) {
-  return Promise.all([page.waitForNavigation(), elem.click()]);
+  return Promise.all([
+    page.waitForNavigation({
+      waitUntil: ["domcontentloaded", "networkidle2"]
+    }),
+    elem.click()
+  ]);
 }
 
 function sleep(timeout) {

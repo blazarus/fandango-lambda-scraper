@@ -25,6 +25,18 @@ exports.getBrowser = (() => {
   };
 })();
 
+exports.createBrowser = async () => {
+  await setupChrome();
+  const browser = await puppeteer.launch({
+    headless: true,
+    executablePath: config.executablePath,
+    args: config.launchOptionForLambda,
+    dumpio: !!exports.DEBUG
+  });
+  debugLog(async b => `launch done: ${await browser.version()}`);
+  return browser;
+};
+
 const isBrowserAvailable = async browser => {
   try {
     await browser.version();
