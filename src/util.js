@@ -1,4 +1,5 @@
 const fs = require("fs");
+const fetch = require("node-fetch");
 
 async function isReservedSeating(showtimeGroupHandle) {
   const amenityHandles = await showtimeGroupHandle.$$(
@@ -39,10 +40,28 @@ function readFilePromise(...args) {
   });
 }
 
+function persistShowtimes(showtimes) {
+  const body = JSON.stringify({
+    parameters: [{ name: "showtimes", value: JSON.stringify(showtimes) }]
+  });
+  return fetch(
+    "https://api.transposit.com/app/v1/blazarus/fandango_scraper/api/execute/persist_metadata",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-KEY": "k3qs7fjud71n8kqcf7mhf1ar3g"
+      },
+      body
+    }
+  );
+}
+
 module.exports = {
   isReservedSeating,
   clickAndNavigate,
   clickElemAndNavigate,
   sleep,
-  readFilePromise
+  readFilePromise,
+  persistShowtimes
 };

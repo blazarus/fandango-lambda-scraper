@@ -3,7 +3,8 @@ const {
   clickAndNavigate,
   clickElemAndNavigate,
   sleep,
-  readFilePromise
+  readFilePromise,
+  persistShowtimes
 } = require("./util");
 const aws = require("aws-sdk");
 const s3 = new aws.S3({ apiVersion: "2006-03-01" });
@@ -43,28 +44,37 @@ async function scrapeFandango(browser) {
     await page.type(".date-picker__location input", "94107");
     await clickAndNavigate(page, ".date-picker__location a");
 
-    const showtimeLinks = await getShowtimeLinks(page);
-
     const allTheaterInfo = await gatherAllTheaterInfo(page);
     console.log("allTheaterInfo", allTheaterInfo);
 
     // get a list of urls to open and take screenshots of the seating charts, and then open those in new windows in parallel
-    const promises = [];
+    const BATCH_SIZE = 5;
+    const batches = [];
+    let currBatch = [];
     let index = 0;
     for (const theater of allTheaterInfo) {
       for (const group of theater.showtimeGroups) {
         for (const showtime of group.showtimes) {
           if (showtime.reservedSeating) {
-            // Doing one at a time for now because things get too slow when trying to do all in parallel. Should probably do batches in parallel ideally
-            promises.push(
-              await getShowtimeScreenshot(browser, showtime, index)
-            );
+            if (currBatch.length >= BATCH_SIZE) {
+              currBatch = [];
+              batches.push(currBatch);
+            }
+            currBatch.push({ browser, showtime, index });
             index++;
           }
         }
       }
     }
-    await Promise.all(promises);
+
+    for (const batch of batches) {
+      const promises = batch.map(({ browser, showtime, index }) =>
+        getShowtimeScreenshot(browser, showtime, index)
+      );
+      await Promise.all(promises);
+    }
+
+    await persistShowtimes(allTheaterInfo);
   } catch (e) {
     console.log("Oops:", e.message);
     try {
@@ -79,7 +89,7 @@ async function scrapeFandango(browser) {
     }
   }
 
-  console.log("Done, closing browser");
+  console.log("Done, closing page");
   await page.close();
 }
 
@@ -116,24 +126,14 @@ async function getShowtimeScreenshot(browser, showtime, index) {
       })
       .promise();
 
+    await page.close();
+
     // record path in the showtime object so we can retrieve later
     // record only after screenshot is actually successful
     showtime.screenshotPath = filename;
   } catch (e) {
     console.log("Error processing showtime with url:", showtime.purchaseUrl, e);
   }
-}
-
-async function getShowtimeLinks(page) {
-  await page.waitForSelector(".showtime-btn--available");
-  const showtimeLinks = await page.$$(
-    ".theater__btn-list-item .showtime-btn--available"
-  );
-  console.log(
-    "Recalculating showtime links. Total links:",
-    showtimeLinks.length
-  );
-  return showtimeLinks;
 }
 
 async function doShowtime(page, i) {
