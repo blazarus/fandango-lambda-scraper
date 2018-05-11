@@ -50,9 +50,13 @@ function readFilePromise(...args) {
   });
 }
 
-function persistShowtimes(showtimes) {
+function persistShowtimes(movieId, theaterSearch, showtimes) {
   const body = JSON.stringify({
-    parameters: [{ name: "showtimes", value: JSON.stringify(showtimes) }]
+    parameters: [
+      { name: "movieId", value: movieId },
+      { name: "search", value: theaterSearch },
+      { name: "showtimes", value: JSON.stringify(showtimes) }
+    ]
   });
   return fetch(
     "https://api.transposit.com/app/v1/blazarus/fandango_scraper/api/execute/persist_metadata",
@@ -67,11 +71,26 @@ function persistShowtimes(showtimes) {
   );
 }
 
+// From https://stackoverflow.com/questions/901115/how-can-i-get-query-string-values-in-javascript
+function getUrlParamByName(url, paramName) {
+  paramName = paramName.replace(/[\[\]]/g, "\\$&");
+  const regex = new RegExp("[?&]" + paramName + "(=([^&#]*)|&|#|$)");
+  const results = regex.exec(url);
+  if (!results) {
+    return null;
+  }
+  if (!results[2]) {
+    return "";
+  }
+  return decodeURIComponent(results[2].replace(/\+/g, " "));
+}
+
 module.exports = {
   isReservedSeating,
   clickAndNavigate,
   clickElemAndNavigate,
   sleep,
   readFilePromise,
-  persistShowtimes
+  persistShowtimes,
+  getUrlParamByName
 };

@@ -2,9 +2,9 @@ const {
   isReservedSeating,
   clickAndNavigate,
   clickElemAndNavigate,
-  sleep,
   readFilePromise,
-  persistShowtimes
+  persistShowtimes,
+  getUrlParamByName
 } = require("./util");
 const aws = require("aws-sdk");
 const s3 = new aws.S3({ apiVersion: "2006-03-01" });
@@ -14,6 +14,17 @@ const S3_BUCKET = "hackathon.blazarus";
 
 // TODO should probably be disposing all of the elementHandles
 
+// interface MovieSearch {
+//   movie: Movie;
+//   searchText: string;
+//   date: string;
+//   results: Theater[];
+// }
+// interface Movie {
+//   movieId: string;
+//   title: string;
+//   showtimesUrl: string;
+// }
 // interface Theater {
 //   name: string;
 //   showtimeGroups: ShowtimeGroup[];
@@ -27,22 +38,29 @@ const S3_BUCKET = "hackathon.blazarus";
 //   reservedSeating: boolean;
 //   screenshotPath?: string; // the filename, only applicable if reserved seating is true
 //   purchaseUrl: string; // url to fandango to go purchase tickets
+//   movieId: string,
+//   startDatetime: string, // this is a little redundant with time
+//   theaterId: string,
+//   showtimeId: string
 // }
 
-async function scrapeFandango(browserFactory) {
+async function scrapeFandango(
+  browserFactory,
+  movieId,
+  showtimesUrl,
+  theaterSearch
+) {
   const showtimeInfo = [];
   const browser = await browserFactory();
   const page = await browser.newPage();
 
   try {
-    await page.goto(
-      "https://www.fandango.com/avengers-infinity-war-199925/movie-times"
-    );
+    await page.goto(showtimesUrl);
     // Search for theaters in area code
     await page.evaluate(() => {
       document.querySelector(".date-picker__location input").value = "";
     });
-    await page.type(".date-picker__location input", "94107");
+    await page.type(".date-picker__location input", theaterSearch);
     await clickAndNavigate(page, ".date-picker__location a");
 
     const allTheaterInfo = await gatherAllTheaterInfo(page);
@@ -55,7 +73,6 @@ async function scrapeFandango(browserFactory) {
     const BATCH_SIZE = 5;
     const batches = [];
     let currBatch = [];
-    let index = 0;
     for (const theater of allTheaterInfo) {
       for (const group of theater.showtimeGroups) {
         for (const showtime of group.showtimes) {
@@ -64,21 +81,20 @@ async function scrapeFandango(browserFactory) {
               currBatch = [];
               batches.push(currBatch);
             }
-            currBatch.push({ showtime, index });
-            index++;
+            currBatch.push(showtime);
           }
         }
       }
     }
 
     for (const batch of batches) {
-      const promises = batch.map(({ showtime, index }) =>
-        getShowtimeScreenshot(browserFactory, showtime, index)
+      const promises = batch.map(showtime =>
+        getShowtimeScreenshot(browserFactory, showtime)
       );
       await Promise.all(promises);
     }
 
-    await persistShowtimes(allTheaterInfo);
+    await persistShowtimes(movieId, theaterSearch, allTheaterInfo);
   } catch (e) {
     console.log("Oops:", e.message);
     try {
@@ -97,12 +113,13 @@ async function scrapeFandango(browserFactory) {
   await browser.close();
 }
 
-async function getShowtimeScreenshot(browserFactory, showtime, index) {
+async function getShowtimeScreenshot(browserFactory, showtime) {
   console.log("Starting to process showtime:", showtime);
+  const { purchaseUrl, showtimeId } = showtime;
   const browser = await browserFactory();
   const page = await browser.newPage();
   try {
-    await page.goto(showtime.purchaseUrl, {
+    await page.goto(purchaseUrl, {
       waitUntil: ["domcontentloaded", "networkidle0"]
     });
     await page.waitForSelector("select", {
@@ -118,7 +135,7 @@ async function getShowtimeScreenshot(browserFactory, showtime, index) {
     const seatPickerHandle = await page.$("#SeatPickerContainer");
 
     // purchase url should be unique, so use that for the filename
-    const filename = `seating-charts_${index}.png`;
+    const filename = `seating-charts_${showtimeId}.png`;
     const path = `/tmp/${filename}`;
 
     await seatPickerHandle.screenshot({
@@ -141,7 +158,7 @@ async function getShowtimeScreenshot(browserFactory, showtime, index) {
     // record only after screenshot is actually successful
     showtime.screenshotPath = filename;
   } catch (e) {
-    console.log("Error processing showtime with url:", showtime.purchaseUrl, e);
+    console.log("Error processing showtime with url:", purchaseUrl, e);
   }
 }
 
@@ -206,11 +223,19 @@ async function getShowtimeGroupInfo(showtimeGroupHandle) {
     const time = await (await showtimeButtonHandle.getProperty(
       "innerText"
     )).jsonValue();
+    const movieId = getUrlParamByName(purchaseUrl, "mid");
+    const startDatetime = getUrlParamByName(purchaseUrl, "sdate");
+    const theaterId = getUrlParamByName(purchaseUrl, "tid");
+    const showtimeId = `${movieId}__${theaterId}__${startDatetime}`;
     console.log(time, purchaseUrl);
     results.showtimes.push({
       time,
       reservedSeating,
-      purchaseUrl
+      purchaseUrl,
+      movieId,
+      startDatetime, // this is a little redundant with time
+      theaterId,
+      showtimeId
     });
   }
 
