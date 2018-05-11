@@ -5,11 +5,11 @@ const puppeteer = require("puppeteer");
 const movieId = "208157";
 const showtimesUrl =
   "https://www.fandango.com/avengers-infinity-war-199925/movie-times";
-const theaterSearch = "94107";
+const theaterSearch = "San Francisco";
 
 (async () => {
   await index
-    .run(browserFactory, showtimesUrl, theaterSearch)
+    .run(browserFactory, movieId, showtimesUrl, theaterSearch)
     .then(result => console.log(result))
     .catch(err => console.error(err));
   await browser.close();
