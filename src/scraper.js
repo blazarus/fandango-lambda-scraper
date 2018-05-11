@@ -70,7 +70,7 @@ async function scrapeFandango(
     // and then open those in new windows in parallel
     // Note: fandango doesn't like having multiple showtime pages open in different tabs,
     // probably for session reasons. Need to open different browsers
-    const BATCH_SIZE = 5;
+    const BATCH_SIZE = 8;
     let currBatch = [];
     const batches = [currBatch];
     for (const theater of allTheaterInfo) {
@@ -142,6 +142,7 @@ async function getShowtimeScreenshot(browserFactory, showtime) {
       path,
       type: "png"
     });
+    await seatPickerHandle.dispose();
     const screenshot = await readFilePromise(path);
     await s3
       .putObject({
@@ -188,6 +189,7 @@ async function gatherAllTheaterInfo(page) {
       "innerText"
     )).jsonValue();
     console.log("theater name:", theaterResults.name);
+    await nameElem.dispose();
 
     theaterResults.showtimeGroups = [];
     for (const showtimeGroupHandle of await theaterHandle.$$(
@@ -196,8 +198,10 @@ async function gatherAllTheaterInfo(page) {
       theaterResults.showtimeGroups.push(
         await getShowtimeGroupInfo(showtimeGroupHandle)
       );
+      await showtimeGroupHandle.dispose();
     }
     results.push(theaterResults);
+    await theaterHandle.dispose();
   }
 
   return results;
@@ -206,10 +210,14 @@ async function gatherAllTheaterInfo(page) {
 async function getShowtimeGroupInfo(showtimeGroupHandle) {
   const results = {};
 
-  results.description = await (await (await showtimeGroupHandle.$(
+  const tickHeadlineHandle = await showtimeGroupHandle.$(
     ".theater__tick-headline"
-  )).getProperty("innerText")).jsonValue();
+  );
+  results.description = await (await tickHeadlineHandle.getProperty(
+    "innerText"
+  )).jsonValue();
   console.log("description", results.description);
+  await tickHeadlineHandle.dispose();
   const reservedSeating = await isReservedSeating(showtimeGroupHandle);
   console.log("reserved seating?", reservedSeating);
 
@@ -223,6 +231,7 @@ async function getShowtimeGroupInfo(showtimeGroupHandle) {
     const time = await (await showtimeButtonHandle.getProperty(
       "innerText"
     )).jsonValue();
+    await showtimeButtonHandle.dispose();
     const movieId = getUrlParamByName(purchaseUrl, "mid");
     const startDatetime = getUrlParamByName(purchaseUrl, "sdate");
     const theaterId = getUrlParamByName(purchaseUrl, "tid");
