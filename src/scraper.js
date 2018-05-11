@@ -71,8 +71,8 @@ async function scrapeFandango(
     // Note: fandango doesn't like having multiple showtime pages open in different tabs,
     // probably for session reasons. Need to open different browsers
     const BATCH_SIZE = 5;
-    const batches = [];
     let currBatch = [];
+    const batches = [currBatch];
     for (const theater of allTheaterInfo) {
       for (const group of theater.showtimeGroups) {
         for (const showtime of group.showtimes) {
