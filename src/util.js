@@ -50,16 +50,38 @@ function readFilePromise(...args) {
   });
 }
 
-function persistShowtimes(movieId, theaterSearch, showtimes) {
+function persistShowtimesForDay(movieId, theaterSearch, date, showtimes) {
   const body = JSON.stringify({
     parameters: [
       { name: "movieId", value: movieId },
       { name: "search", value: theaterSearch },
+      { name: "date", value: date },
       { name: "showtimes", value: JSON.stringify(showtimes) }
     ]
   });
   return fetch(
     "https://api.transposit.com/app/v1/blazarus/fandango_scraper/api/execute/persist_metadata",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-KEY": "k3qs7fjud71n8kqcf7mhf1ar3g"
+      },
+      body
+    }
+  );
+}
+
+function runLambdaScrapeDay(movieId, theaterSearch, day) {
+  const body = JSON.stringify({
+    parameters: [
+      { name: "movieId", value: movieId },
+      { name: "theaterSearch", value: theaterSearch },
+      { name: "day", value: JSON.stringify(day) }
+    ]
+  });
+  return fetch(
+    "https://api.transposit.com/app/v1/blazarus/fandango_scraper/api/execute/runLambdaScrapeDay",
     {
       method: "POST",
       headers: {
@@ -91,6 +113,7 @@ module.exports = {
   clickElemAndNavigate,
   sleep,
   readFilePromise,
-  persistShowtimes,
+  persistShowtimesForDay,
+  runLambdaScrapeDay,
   getUrlParamByName
 };

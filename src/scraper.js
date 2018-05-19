@@ -3,7 +3,7 @@ const {
   clickAndNavigate,
   clickElemAndNavigate,
   readFilePromise,
-  persistShowtimes,
+  persistShowtimesForDay,
   getUrlParamByName
 } = require("./util");
 const aws = require("aws-sdk");
@@ -11,6 +11,7 @@ const s3 = new aws.S3({ apiVersion: "2006-03-01" });
 const setup = require("./starter-kit/setup");
 
 const S3_BUCKET = "hackathon.blazarus";
+const BATCH_SIZE = 8;
 
 // TODO should probably be disposing all of the elementHandles
 
@@ -50,7 +51,7 @@ async function scrapeFandango(
   showtimesUrl,
   theaterSearch
 ) {
-  const showtimeInfo = [];
+  let allDays;
   const browser = await browserFactory();
   const page = await browser.newPage();
 
@@ -63,38 +64,8 @@ async function scrapeFandango(
     await page.type(".date-picker__location input", theaterSearch);
     await clickAndNavigate(page, ".date-picker__location a");
 
-    const allTheaterInfo = await gatherAllTheaterInfo(page);
-    console.log("allTheaterInfo", allTheaterInfo);
-
-    // get a list of urls to open and take screenshots of the seating charts,
-    // and then open those in new windows in parallel
-    // Note: fandango doesn't like having multiple showtime pages open in different tabs,
-    // probably for session reasons. Need to open different browsers
-    const BATCH_SIZE = 8;
-    let currBatch = [];
-    const batches = [currBatch];
-    for (const theater of allTheaterInfo) {
-      for (const group of theater.showtimeGroups) {
-        for (const showtime of group.showtimes) {
-          if (showtime.reservedSeating) {
-            if (currBatch.length >= BATCH_SIZE) {
-              currBatch = [];
-              batches.push(currBatch);
-            }
-            currBatch.push(showtime);
-          }
-        }
-      }
-    }
-
-    for (const batch of batches) {
-      const promises = batch.map(showtime =>
-        getShowtimeScreenshot(browserFactory, showtime)
-      );
-      await Promise.all(promises);
-    }
-
-    await persistShowtimes(movieId, theaterSearch, allTheaterInfo);
+    allDays = await gatherAllTheaterInfo(browser, page);
+    console.log("allDays", allDays);
   } catch (e) {
     console.log("Oops:", e.message);
     try {
@@ -111,6 +82,35 @@ async function scrapeFandango(
 
   console.log("Done, closing page");
   await browser.close();
+  return allDays;
+}
+
+async function scrapeDay(browserFactory, movieId, theaterSearch, day) {
+  let currBatch = [];
+  const batches = [currBatch];
+  for (const theater of day.results) {
+    for (const group of theater.showtimeGroups) {
+      for (const showtime of group.showtimes) {
+        if (showtime.reservedSeating) {
+          if (currBatch.length >= BATCH_SIZE) {
+            currBatch = [];
+            batches.push(currBatch);
+          }
+          currBatch.push(showtime);
+        }
+      }
+    }
+  }
+
+  for (const batch of batches) {
+    const promises = batch.map(showtime =>
+      getShowtimeScreenshot(browserFactory, showtime)
+    );
+    await Promise.all(promises);
+  }
+
+  const { date } = day;
+  await persistShowtimesForDay(movieId, theaterSearch, date, day);
 }
 
 async function getShowtimeScreenshot(browserFactory, showtime) {
@@ -179,7 +179,36 @@ async function doShowtime(page, i) {
   });
 }
 
-async function gatherAllTheaterInfo(page) {
+async function gatherAllTheaterInfo(browser, page) {
+  // Not sure why, but I wasn't able to get the date correctly using puppeteers methods
+  const dates = await page.evaluate(() => {
+    const res = [];
+    for (const elem of document.querySelectorAll(
+      "li.date-picker__date:not(.date-picker__date--no-showtime)"
+    )) {
+      res.push({
+        href: elem.querySelector("a").getAttribute("href"),
+        date: elem.getAttribute("data-show-time-date")
+      });
+    }
+    return res;
+  });
+  console.log(dates);
+  const promises = [];
+  for (const dateObj of dates) {
+    const newPage = await browser.newPage();
+    await newPage.goto(page.url() + dateObj.href);
+    const promise = gatherInfoForDay(newPage);
+    promises.push(promise);
+    promise.then(dayResults => {
+      dateObj.results = dayResults;
+    });
+  }
+  await Promise.all(promises);
+  return dates;
+}
+
+async function gatherInfoForDay(page) {
   const results = [];
 
   for (const theaterHandle of await page.$$(".theater__wrap")) {
@@ -252,5 +281,6 @@ async function getShowtimeGroupInfo(showtimeGroupHandle) {
 }
 
 module.exports = {
-  scrapeFandango
+  scrapeFandango,
+  scrapeDay
 };

@@ -8,11 +8,17 @@ const showtimesUrl =
 const theaterSearch = "San Francisco";
 
 (async () => {
-  await index
-    .run(browserFactory, movieId, showtimesUrl, theaterSearch)
-    .then(result => console.log(result))
-    .catch(err => console.error(err));
-  await browser.close();
+  const availableDays = await index.runGetAvailableDays(
+    browserFactory,
+    movieId,
+    showtimesUrl,
+    theaterSearch
+  );
+
+  console.log("availableDays", availableDays);
+  for (const day of availableDays) {
+    await index.runScrapeDay(browserFactory, movieId, theaterSearch, day);
+  }
 })();
 
 function browserFactory() {
